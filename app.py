@@ -1,155 +1,152 @@
-import plotly.express as px
-from shiny.express import input, ui
+from shiny import reactive, render
 from shinywidgets import render_plotly
-import palmerpenguins  # This package provides the Palmer Penguins dataset
+from shiny.express import ui
+
+import random
+from datetime import datetime
+from collections import deque
+
 import pandas as pd
-import seaborn as sns
-from shiny import render, reactive
+import plotly.express as px
+from scipy import stats
 
-# Use the built-in function to load the Palmer Penguins dataset
-penguins_df = palmerpenguins.load_penguins()
+from faicons import icon_svg
 
-ui.page_opts(title="Penguin Data", fillable=True)
+UPDATE_INTERVAL_SECS: int = 1
 
-# Add a Shiny UI sidebar for user interaction
-# Use the ui.sidebar() function to create a sidebar
-# Set the open parameter to "open" to make the sidebar open by default
-# Use a with block to add content to the sidebar
+# --------------------------------------------
+# Initialize a REACTIVE VALUE with a common data structure
+# The reactive value is used to store state (information)
+# Used by all the display components that show this live data.
+# This reactive value is a wrapper around a DEQUE of readings
+# --------------------------------------------
+
+DEQUE_SIZE: int = 5
+reactive_value_wrapper = reactive.value(deque(maxlen=DEQUE_SIZE))
+
+
+@reactive.calc()
+def reactive_calc_combined():
+    
+    # Invalidate this calculation every UPDATE_INTERVAL_SECS to trigger updates
+    reactive.invalidate_later(UPDATE_INTERVAL_SECS)
+
+    # Data generation logic
+    temp = round(random.uniform(-18, -16), 1)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_dictionary_entry = {"temp":temp, "timestamp":timestamp}
+    
+    # get the deque and append the new entry
+    reactive_value_wrapper.get().append(new_dictionary_entry)
+    
+    # Get a snapshot of the current deque for any further processing
+    deque_snapshot = reactive_value_wrapper.get()
+
+    df = pd.DataFrame(deque_snapshot)
+
+    latest_dictionary_entry = new_dictionary_entry
+
+    return deque_snapshot, df, latest_dictionary_entry
+
+# Define the Shiny UI Page Layout
+ui.page_opts(title="PyShiny Express: Live Data With Value Card", fillable=True)
+
+# Define the UI Layout Sidebar
 with ui.sidebar(open="open"):
-    # Use the ui.h2() function to add a 2nd level header to the sidebar
-    # pass in a string argument (in quotes) to set the header text to "Sidebar" 
-    ui.h2("Sidebar")
 
-    # Use ui.input_selectize() to create a dropdown input to choose a column
-    # pass in three arguments:
-    #   the name of the input (in quotes), e.g., "selected_attribute"
-    #   the label for the input (in quotes)
-    #   a list of options for the input (in square brackets) 
-    #   e.g. ["bill_length_mm", "bill_depth_mm", "flipper_length_mm", "body_mass_g"]
-    ui.input_selectize(
-        "selected_attribute",
-        "Select Plotly Attribute",
-        ["bill_length_mm", "bill_depth_mm", "flipper_length_mm", "body_mass_g"]
+  ui.h2("Antarctic Explorer", class_="text-center")
+  ui.p(
+        "A demonstration of real-time temperature readings in Antarctica.",
+        class_="text-center",
     )
+  ui.hr()
 
-    # Use ui.input_numeric() to create a numeric input for the number of Plotly histogram bins
-    #   pass in two arguments:
-    #   the name of the input (in quotes), e.g. "plotly_bin_count"
-    #   the label for the input (in quotes)
-    ui.input_numeric("plotly_bin_count", "Plotly Bin Count", 30)
+# In Shiny Express, everything not in the sidebar is in the main panel
 
-    # Use ui.input_slider() to create a slider input for the number of Seaborn bins
-    #   pass in four arguments:
-    #   the name of the input (in quotes), e.g. "seaborn_bin_count"
-    #   the label for the input (in quotes)
-    #   the minimum value for the input (as an integer)
-    #   the maximum value for the input (as an integer)
-    #   the default value for the input (as an integer)
-    ui.input_slider("seaborn_bin_count", "Number of Seaborn Bins", 1, 50, 25)
-
-    # Use ui.input_checkbox_group() to create a checkbox group input to filter the species
-    #   pass in five arguments:
-    #   the name of the input (in quotes), e.g.  "selected_species_list"
-    #   the label for the input (in quotes)
-    #   a list of options for the input (in square brackets) as ["Adelie", "Gentoo", "Chinstrap"]
-    #   a keyword argument selected= a list of selected options for the input (in square brackets)
-    #   a keyword argument inline= a Boolean value (True or False) as you like
-    ui.input_checkbox_group(
-        "selected_species_list", 
-        "Species",
-        ["Adelie", "Gentoo", "Chinstrap"],
-        selected="Gentoo",
-        inline=True
-    )
-
-    # Use ui.hr() to add a horizontal rule to the sidebar
-    ui.hr()
-
-    # Use ui.a() to add a hyperlink to the sidebar
-    #   pass in two arguments:
-    #   the text for the hyperlink (in quotes), e.g. "GitHub"
-    #   a keyword argument href= the URL for the hyperlink (in quotes), e.g. your GitHub repo URL
-    #   a keyword argument target= "_blank" to open the link in a new tab
-    ui.a(
-        "Github",
-        href="https://github.com/matthewellishanson/cintel-02-data/blob/main/app.py",
-        target="_blank"
-    )
-
-# Create a DataTable
 with ui.layout_columns():
+    with ui.value_box(
+        showcase=icon_svg("sun"),
+        theme="bg-gradient-blue-purple",
+    ):
+
+        "Current Temperature"
+
+        @render.text
+        def display_temp():
+            """Get the latest reading and return a temperature string"""
+            deque_snapshot, df, latest_dictionary_entry = reactive_calc_combined()
+            return f"{latest_dictionary_entry['temp']} C"
+
+        "warmer than usual"
+
+  
 
     with ui.card(full_screen=True):
-        ui.h2("Penguins DataTable")
+        ui.card_header("Current Date and Time")
 
-        @render.data_frame
-        def render_penguins_table():
-            return render.DataTable(filtered_data())
+        @render.text
+        def display_time():
+            """Get the latest reading and return a timestamp string"""
+            deque_snapshot, df, latest_dictionary_entry = reactive_calc_combined()
+            return f"{latest_dictionary_entry['timestamp']}"
 
-    # create a DataGrid
-    with ui.card(full_screen=True):
-        ui.h2("Penguins DataGrid")
 
-        @render.data_frame
-        def penguins_datagrid():
-            return render.DataGrid(filtered_data())
-
-ui.hr()
-
-# Create a new set of columns for charts
 with ui.layout_columns():
-
-    # Create a Plotly Histogram showing all species
-
-    with ui.card(full_screen=True):
-        ui.card_header("Plotly Histogram")
     
+    with ui.card():
+        ui.card_header("Current Temperatures")
+        
+        @render.data_frame
+        def display_df():
+            """Get the latest reading and return a dataframe with current readings"""
+            deque_snapshot, df, latest_dictionary_entry = reactive_calc_combined()
+            pd.set_option('display.width', None)        # Use maximum width
+            return render.DataGrid( df,width="100%")
+        
+
+with ui.layout_columns():
+    with ui.card():
+        ui.card_header("Current Chart")
+
         @render_plotly
-        def plotly_histogram():
-            return px.histogram(
-                filtered_data(), x=input.selected_attribute(), nbins=input.plotly_bin_count(), color="species"
-        )
-
-    # Creates a Seaborn Histogram showing all species
-
-    with ui.card(full_screen=True):
-        ui.card_header("Seaborn Histogram")
+        def display_plot():
+            # Fetch from the reactive calc function
+            deque_snapshot, df, latest_dictionary_entry = reactive_calc_combined()
     
-        @render.plot(alt="Seaborn Histogram")
-        def seaborn_histogram():
-            histplot = sns.histplot(data=filtered_data(), x="body_mass_g", bins=input.seaborn_bin_count(), multiple="dodge", hue="species")
-            histplot.set_title("Palmer Penguins")
-            histplot.set_xlabel("Mass")
-            histplot.set_ylabel("Count")
-            return histplot
+            # Ensure the DataFrame is not empty before plotting
+            if not df.empty:
+                # Convert the 'timestamp' column to datetime for better plotting
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
     
-    # Creates a Plotly Scatterplot showing all species
-
-    with ui.card(full_screen=True):
-        ui.card_header("Species Scatterplot")
+                # Create scatter plot for readings
+                # pass in the df, the name of the x column, the name of the y column,
+                # and more
+            
+                fig = px.scatter(df,
+                x="timestamp",
+                y="temp",
+                title="Temperature Readings with Regression Line",
+                labels={"temp": "Temperature (°C)", "timestamp": "Time"},
+                color_discrete_sequence=["blue"] )
+            
+                # Linear regression - we need to get a list of the
+                # Independent variable x values (time) and the
+                # Dependent variable y values (temp)
+                # then, it's pretty easy using scipy.stats.linregress()
     
-        @render_plotly
-        def plotly_scatterplot():
-            return px.scatter(filtered_data(),
-                x="bill_length_mm",
-                y="body_mass_g",
-                color="species",
-                title="Penguins Plot",
-                labels={
-                    "bill_length_mm": "Bill Length (mm)",
-                    "body_mass_g": "Body Mass (g)",
-                }, 
-            )
+                # For x let's generate a sequence of integers from 0 to len(df)
+                sequence = range(len(df))
+                x_vals = list(sequence)
+                y_vals = df["temp"]
 
-# --------------------------------------------------------
-# Reactive calculations and effects
-# --------------------------------------------------------
+                slope, intercept, r_value, p_value, std_err = stats.linregress(x_vals, y_vals)
+                df['best_fit_line'] = [slope * x + intercept for x in x_vals]
+    
+                # Add the regression line to the figure
+                fig.add_scatter(x=df["timestamp"], y=df['best_fit_line'], mode='lines', name='Regression Line')
+    
+                # Update layout as needed to customize further
+                fig.update_layout(xaxis_title="Time",yaxis_title="Temperature (°C)")
 
-# Add a reactive calculation to filter the data
-# By decorating the function with @reactive, we can use the function to filter the data
-# The function will be called whenever an input functions used to generate that output changes.
-# Any output that depends on the reactive function (e.g., filtered_data()) will be updated when the data changes.
-
-@reactive.calc
-def filtered_data():
-    return penguins_df[penguins_df["species"].isin(input.selected_species_list())]
+            return fig
+        
